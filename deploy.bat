@@ -1,0 +1,6 @@
+@echo off
+set PATH=%PATH%;C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin;C:\Program Files\Google\Cloud SDK\google-cloud-sdk\bin;%LOCALAPPDATA%\Google\Cloud SDK\google-cloud-sdk\bin
+echo Granting necessary IAM permissions for Cloud Build...
+gcloud projects add-iam-policy-binding ai-promptwars --member="serviceAccount:826400466300-compute@developer.gserviceaccount.com" --role="roles/storage.admin"
+echo Deploying to Google Cloud Run...
+gcloud run deploy ai-promptwars-veer --source . --project ai-promptwars --region us-central1 --allow-unauthenticated --quiet
