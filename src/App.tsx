@@ -34,6 +34,24 @@ import {
 } from 'lucide-react';
 import { TripPreferences, TripPlan, TravelPace } from './types.ts';
 import { generateTripPlan, suggestReplanning } from './services/gemini.ts';
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
+import L from 'leaflet';
+
+// Fix for default Leaflet markers in Vite
+// @ts-ignore
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+// @ts-ignore
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+// @ts-ignore
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+// @ts-ignore
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+});
 
 // --- Components ---
 
@@ -68,20 +86,33 @@ function Toast({ message, type, onClose }: { message: string, type: 'error' | 'i
   );
 }
 
-function Header({ currentTrip }: { currentTrip: TripPlan | null }) {
+function Header({ trips, activeTripId, onSelectTrip, onDeleteTrip }: { trips: TripPlan[], activeTripId: string | null, onSelectTrip: (id: string) => void, onDeleteTrip: (id: string) => void }) {
+  const currentTrip = trips.find(t => t.id === activeTripId);
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass-morphism h-16 px-6 flex items-center justify-between">
       <div className="flex items-center gap-2">
         <Wind className="text-brand-accent h-6 w-6" />
         <span className="font-serif italic font-black text-lg tracking-tight">VEER</span>
       </div>
+      
+      {trips.length > 0 && (
+        <div className="hidden md:flex items-center gap-2 max-w-lg overflow-x-auto noscrollbar">
+          {trips.map(trip => (
+            <div key={trip.id} className={`flex items-center gap-1 px-3 py-1.5 rounded-full border transition-all text-xs ${activeTripId === trip.id ? 'bg-brand-accent/20 border-brand-accent text-white' : 'border-white/10 text-brand-muted hover:border-white/30'}`}>
+              <button onClick={() => onSelectTrip(trip.id)} className="flex items-center gap-1 uppercase tracking-widest font-bold">
+                <MapPin className="h-3 w-3" />
+                {trip.preferences.destination}
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); onDeleteTrip(trip.id); }} className="ml-1 p-0.5 hover:text-red-400 rounded-full transition-colors">
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {currentTrip && (
         <div className="flex items-center gap-4">
-          <div className="hidden md:flex items-center gap-2 text-xs text-brand-muted font-medium uppercase tracking-widest">
-            <MapPin className="h-3 w-3" />
-            {currentTrip.preferences.destination}
-          </div>
-          <div className="h-8 w-px bg-white/10 mx-2" />
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-tighter text-brand-muted">Offline Mode</span>
             <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
@@ -127,16 +158,23 @@ function WelcomeView({ onStart }: { onStart: () => void }) {
 function ConfigView({ onGenerate }: { onGenerate: (prefs: TripPreferences) => void }) {
   const [prefs, setPrefs] = useState<TripPreferences>({
     destination: '',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
+    numDays: 3,
     budget: 1000,
     currency: 'USD',
+    travelStyle: 'Comfort',
     interests: [],
     pace: TravelPace.MODERATE,
-    constraints: []
+    constraints: [],
+    weatherPreference: 'Flexible',
+    foodPreference: 'Local/Authentic',
+    transportPreference: 'Public Transit'
   });
 
   const availableInterests = ["Local Food", "Art & History", "Nature", "Photography", "Shopping", "Adventure", "Nightlife"];
+  const travelStyles = ["Budget", "Comfort", "Luxury"];
+  const weatherPrefs = ["Flexible", "Sunny/Warm", "Cool/Mild", "Snow/Winter"];
+  const foodPrefs = ["Local/Authentic", "Fine Dining", "Street Food", "Balanced"];
+  const transportPrefs = ["Public Transit", "Walking/Biking", "Taxi/Rideshare", "Rental Car"];
 
   const toggleInterest = (interest: string) => {
     setPrefs(p => ({
@@ -146,6 +184,27 @@ function ConfigView({ onGenerate }: { onGenerate: (prefs: TripPreferences) => vo
         : [...p.interests, interest]
     }));
   };
+
+  const SelectionGroup = ({ label, options, currentValue, onChange }: { label: string, options: string[], currentValue: string, onChange: (val: string) => void }) => (
+    <section>
+      <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-4 font-bold">{label}</label>
+      <div className="flex flex-wrap gap-3">
+        {options.map(opt => (
+          <button
+            key={opt}
+            onClick={() => onChange(opt)}
+            className={`px-5 py-2 rounded-full border text-sm transition-all ${
+              currentValue === opt
+                ? "bg-brand-accent border-brand-accent text-white"
+                : "border-white/10 hover:border-white/40"
+            }`}
+          >
+            {opt}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
 
   return (
     <motion.div 
@@ -158,7 +217,7 @@ function ConfigView({ onGenerate }: { onGenerate: (prefs: TripPreferences) => vo
         <p className="text-brand-muted text-sm uppercase tracking-widest">Let AI solve the logistics</p>
       </div>
 
-      <div className="space-y-12">
+      <div className="space-y-10">
         {/* Destination */}
         <section>
           <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-4 font-bold">Destination</label>
@@ -171,26 +230,28 @@ function ConfigView({ onGenerate }: { onGenerate: (prefs: TripPreferences) => vo
           />
         </section>
 
-        {/* Dates & Budget */}
+        {/* Days & Budget */}
         <div className="grid grid-cols-2 gap-8">
           <section>
-            <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-4 font-bold">Trip Dates</label>
-            <div className="flex items-center gap-4 bg-brand-card p-4 rounded-xl">
+            <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-4 font-bold">Number of Days</label>
+            <div className="flex items-center gap-4 bg-brand-card p-4 rounded-xl border border-transparent hover:border-white/10 transition-all">
               <Calendar className="h-5 w-5 text-brand-muted" />
               <input 
-                type="date"
+                type="number"
+                min="1"
                 className="bg-transparent text-sm outline-none w-full"
-                value={prefs.startDate}
-                onChange={e => setPrefs({...prefs, startDate: e.target.value})}
+                value={prefs.numDays}
+                onChange={e => setPrefs({...prefs, numDays: parseInt(e.target.value) || 1})}
               />
             </div>
           </section>
           <section>
-            <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-4 font-bold">Budget</label>
-            <div className="flex items-center gap-4 bg-brand-card p-4 rounded-xl">
+            <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-4 font-bold">Total Budget</label>
+            <div className="flex items-center gap-4 bg-brand-card p-4 rounded-xl border border-transparent hover:border-white/10 transition-all">
               <span className="text-brand-muted font-bold">$</span>
               <input 
                 type="number"
+                min="0"
                 className="bg-transparent text-sm outline-none w-full"
                 value={prefs.budget}
                 onChange={e => setPrefs({...prefs, budget: parseInt(e.target.value) || 0})}
@@ -199,15 +260,41 @@ function ConfigView({ onGenerate }: { onGenerate: (prefs: TripPreferences) => vo
           </section>
         </div>
 
+        {/* Travel Style */}
+        <SelectionGroup label="Travel Style" options={travelStyles} currentValue={prefs.travelStyle} onChange={val => setPrefs({...prefs, travelStyle: val})} />
+
+        {/* Pace */}
+        <section>
+          <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-4 font-bold">Travel Intensity</label>
+          <div className="grid grid-cols-3 gap-4">
+            {Object.values(TravelPace).map(pace => (
+              <button
+                key={pace}
+                onClick={() => setPrefs({...prefs, pace})}
+                className={`p-4 rounded-2xl border text-left transition-all ${
+                  prefs.pace === pace
+                    ? "bg-brand-accent/10 border-brand-accent"
+                    : "bg-brand-card border-transparent hover:border-white/10"
+                }`}
+              >
+                <div className={`h-8 w-8 rounded-lg mb-3 flex items-center justify-center ${prefs.pace === pace ? "bg-brand-accent text-white" : "bg-white/5 text-brand-muted"}`}>
+                  {pace === TravelPace.RELAXED ? <Moon className="h-4 w-4" /> : pace === TravelPace.MODERATE ? <Wind className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+                </div>
+                <div className="font-bold text-sm capitalize">{pace}</div>
+              </button>
+            ))}
+          </div>
+        </section>
+
         {/* Interests */}
         <section>
-          <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-6 font-bold">Interests</label>
-          <div className="flex flex-wrap gap-3">
+          <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-4 font-bold">Interests</label>
+          <div className="flex flex-wrap gap-2">
             {availableInterests.map(interest => (
               <button
                 key={interest}
                 onClick={() => toggleInterest(interest)}
-                className={`px-6 py-2 rounded-full border text-sm transition-all ${
+                className={`px-4 py-2 rounded-full border text-xs transition-all ${
                   prefs.interests.includes(interest)
                     ? "bg-brand-accent border-brand-accent text-white"
                     : "border-white/10 hover:border-white/40"
@@ -219,35 +306,26 @@ function ConfigView({ onGenerate }: { onGenerate: (prefs: TripPreferences) => vo
           </div>
         </section>
 
-        {/* Pace */}
+        {/* Preferences */}
+        <SelectionGroup label="Weather Preference" options={weatherPrefs} currentValue={prefs.weatherPreference} onChange={val => setPrefs({...prefs, weatherPreference: val})} />
+        <SelectionGroup label="Food & Dining" options={foodPrefs} currentValue={prefs.foodPreference} onChange={val => setPrefs({...prefs, foodPreference: val})} />
+        <SelectionGroup label="Transport Preference" options={transportPrefs} currentValue={prefs.transportPreference} onChange={val => setPrefs({...prefs, transportPreference: val})} />
+
+        {/* Constraints */}
         <section>
-          <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-6 font-bold">Travel Intensity</label>
-          <div className="grid grid-cols-3 gap-4">
-            {Object.values(TravelPace).map(pace => (
-              <button
-                key={pace}
-                onClick={() => setPrefs({...prefs, pace})}
-                className={`p-6 rounded-2xl border text-left transition-all ${
-                  prefs.pace === pace
-                    ? "bg-brand-accent/10 border-brand-accent"
-                    : "bg-brand-card border-transparent hover:border-white/10"
-                }`}
-              >
-                <div className={`h-8 w-8 rounded-lg mb-4 flex items-center justify-center ${prefs.pace === pace ? "bg-brand-accent text-white" : "bg-white/5 text-brand-muted"}`}>
-                  {pace === TravelPace.RELAXED ? <Moon className="h-4 w-4" /> : pace === TravelPace.MODERATE ? <Wind className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
-                </div>
-                <div className="font-bold text-sm capitalize">{pace}</div>
-                <div className="text-[10px] opacity-50 mt-1 uppercase tracking-tighter">
-                  {pace === TravelPace.RELAXED ? "Leisurely & Calm" : pace === TravelPace.MODERATE ? "Comfortable mix" : "High activity"}
-                </div>
-              </button>
-            ))}
-          </div>
+          <label className="block text-[10px] uppercase tracking-widest text-brand-muted mb-4 font-bold">Special Constraints (Optional)</label>
+          <input 
+            type="text" 
+            placeholder="e.g. Vegetarian, Wheelchair accessible, No early mornings..."
+            className="w-full bg-brand-card p-4 rounded-xl border border-transparent hover:border-white/10 text-sm outline-none transition-all"
+            value={prefs.constraints.join(', ')}
+            onChange={e => setPrefs({...prefs, constraints: e.target.value.split(',').map(s => s.trim()).filter(Boolean)})}
+          />
         </section>
 
         <div className="pt-8">
           <button 
-            disabled={!prefs.destination}
+            disabled={!prefs.destination || prefs.numDays < 1}
             onClick={() => onGenerate(prefs)}
             className="w-full bg-brand-text text-brand-bg py-5 rounded-2xl font-black text-lg uppercase tracking-widest disabled:opacity-20 transition-all active:scale-[0.98]"
           >
@@ -306,6 +384,97 @@ function LoadingView() {
 }
 
 import { calculateEnergyDrain } from './utils';
+import { ItineraryBlock } from './types.ts';
+
+// Custom Hook for Wiki Images
+function useWikiImage(searchTerm?: string) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!searchTerm) return;
+    const fetchImage = async () => {
+      try {
+        const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(searchTerm)}&prop=pageimages&format=json&pithumbsize=600&origin=*`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const pages = data.query?.pages;
+        if (pages) {
+          const pageId = Object.keys(pages)[0];
+          const img = pages[pageId]?.thumbnail?.source;
+          if (img) setImageUrl(img);
+        }
+      } catch (e) {
+        console.error("Failed to fetch wiki image", e);
+      }
+    };
+    fetchImage();
+  }, [searchTerm]);
+
+  return imageUrl;
+}
+
+function ActivityBlockCard({ block, trip }: { block: ItineraryBlock, trip: TripPlan }) {
+  const imageUrl = useWikiImage(block.imageSearchTerm || block.location);
+  const mapLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(block.location + ' ' + trip.preferences.destination)}`;
+
+  return (
+    <div className="glass-morphism rounded-2xl overflow-hidden hover:bg-white/[0.08] transition-all">
+      {imageUrl && (
+        <div className="w-full h-48 overflow-hidden relative">
+          <img src={imageUrl} alt={block.title} className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-brand-bg/80 to-transparent" />
+        </div>
+      )}
+      <div className="p-6">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <div className="text-[10px] text-brand-muted font-bold uppercase tracking-widest mb-1">{block.startTime} — {block.endTime}</div>
+            <h3 className="text-xl font-bold font-sans tracking-tight">{block.title}</h3>
+          </div>
+          <div className={`p-2 rounded-lg ${
+            block.energyImpact < -10 ? "bg-red-500/10 text-red-400" :
+            block.energyImpact < 0 ? "bg-orange-500/10 text-orange-400" : 
+            "bg-green-500/10 text-green-400"
+          }`}>
+             {block.energyImpact < 0 ? <Zap className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </div>
+        </div>
+        <p className="text-sm text-brand-muted leading-relaxed mb-4 max-w-lg">{block.description}</p>
+        
+        <div className="flex flex-wrap items-center gap-6 border-t border-white/5 pt-4 text-[10px] font-bold uppercase tracking-[0.1em] text-brand-muted">
+          <a href={mapLink} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-brand-accent hover:text-brand-text transition-colors">
+            <MapPin className="h-3 w-3" />
+            {block.location}
+          </a>
+          <div className="flex items-center gap-2">
+            <Zap className="h-3 w-3" />
+            {block.energyImpact} Vitality
+          </div>
+          <div className="flex items-center gap-2 ml-auto text-brand-text">
+            ${block.cost}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MapBounds({ blocks }: { blocks: ItineraryBlock[] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (blocks.length === 0) return;
+    const lats = blocks.filter(b => b.latitude).map(b => b.latitude);
+    const lngs = blocks.filter(b => b.longitude).map(b => b.longitude);
+    if (lats.length > 0 && lngs.length > 0) {
+      const bounds = L.latLngBounds(
+        L.latLng(Math.min(...lats), Math.min(...lngs)),
+        L.latLng(Math.max(...lats), Math.max(...lngs))
+      );
+      map.flyToBounds(bounds, { padding: [100, 100], duration: 1.5 });
+    }
+  }, [blocks, map]);
+  return null;
+}
 
 function DashboardView({ trip, onBack }: { trip: TripPlan, onBack: () => void }) {
   const [activeDayIndex, setActiveDayIndex] = useState(0);
@@ -332,12 +501,39 @@ function DashboardView({ trip, onBack }: { trip: TripPlan, onBack: () => void })
     }
   };
 
+  const mapPositions = activeDay.blocks.filter(b => b.latitude && b.longitude).map(b => [b.latitude, b.longitude] as [number, number]);
+
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="pt-24 pb-32 px-6 max-w-4xl mx-auto"
-    >
+    <>
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <MapContainer 
+          center={mapPositions[0] || [0,0]} 
+          zoom={13} 
+          scrollWheelZoom={false}
+          zoomControl={false}
+          className="w-full h-full"
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://carto.com/">CartoDB</a>'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          />
+          {mapPositions.length > 0 && <Polyline positions={mapPositions} color="#F27D26" weight={4} dashArray="10, 10" />}
+          {activeDay.blocks.map((b, i) => b.latitude && b.longitude ? (
+             <Marker key={i} position={[b.latitude, b.longitude]} />
+          ) : null)}
+          {trip.accommodation && trip.accommodation.latitude && (
+             <Marker position={[trip.accommodation.latitude, trip.accommodation.longitude]} />
+          )}
+          <MapBounds blocks={activeDay.blocks} />
+        </MapContainer>
+        <div className="absolute inset-0 bg-brand-bg/60 pointer-events-none" />
+      </div>
+
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="pt-24 pb-32 px-6 max-w-4xl mx-auto relative z-10"
+      >
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
         <div className="glass-morphism p-6 rounded-3xl relative overflow-hidden group">
@@ -390,6 +586,32 @@ function DashboardView({ trip, onBack }: { trip: TripPlan, onBack: () => void })
         </div>
       </div>
 
+      {/* Accommodation Card */}
+      {trip.accommodation && (
+        <div className="mb-12 glass-morphism p-6 rounded-3xl relative overflow-hidden group border border-brand-accent/30">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2 text-brand-accent text-[10px] uppercase tracking-widest font-bold">
+              <Moon className="h-3 w-3" />
+              Suggested Accommodation
+            </div>
+            <div className="flex items-center gap-2 text-yellow-400 text-xs font-bold">
+              ★ {trip.accommodation.rating}/5
+            </div>
+          </div>
+          <h3 className="text-2xl font-bold font-sans tracking-tight mb-2">{trip.accommodation.name}</h3>
+          <p className="text-sm text-brand-muted leading-relaxed mb-4">{trip.accommodation.description}</p>
+          <div className="flex items-center gap-6 border-t border-white/5 pt-4 text-[10px] font-bold uppercase tracking-[0.1em] text-brand-muted">
+             <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(trip.accommodation.location + ' ' + trip.preferences.destination)}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-brand-accent transition-colors">
+              <MapPin className="h-3 w-3" />
+              {trip.accommodation.location}
+            </a>
+            <div className="flex items-center gap-2 ml-auto text-brand-text">
+              ${trip.accommodation.costPerNight} / Night
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Day Selector */}
       <div className="flex gap-2 mb-10 overflow-x-auto pb-2 noscrollbar">
         {trip.days.map((day, idx) => (
@@ -426,36 +648,7 @@ function DashboardView({ trip, onBack }: { trip: TripPlan, onBack: () => void })
               block.type === 'transit' ? "bg-blue-500" : "bg-brand-muted"
             }`} />
             
-            <div className="glass-morphism p-6 rounded-2xl hover:bg-white/[0.08] transition-all cursor-pointer">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <div className="text-[10px] text-brand-muted font-bold uppercase tracking-widest mb-1">{block.startTime} — {block.endTime}</div>
-                  <h3 className="text-xl font-bold font-sans tracking-tight">{block.title}</h3>
-                </div>
-                <div className={`p-2 rounded-lg ${
-                  block.energyImpact < -10 ? "bg-red-500/10 text-red-400" :
-                  block.energyImpact < 0 ? "bg-orange-500/10 text-orange-400" : 
-                  "bg-green-500/10 text-green-400"
-                }`}>
-                   {block.energyImpact < 0 ? <Zap className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                </div>
-              </div>
-              <p className="text-sm text-brand-muted leading-relaxed mb-4 max-w-lg">{block.description}</p>
-              
-              <div className="flex items-center gap-6 border-t border-white/5 pt-4 text-[10px] font-bold uppercase tracking-[0.1em] text-brand-muted">
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-3 w-3" />
-                  {block.location}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Zap className="h-3 w-3" />
-                  {block.energyImpact} Vitality
-                </div>
-                <div className="flex items-center gap-2 ml-auto text-brand-text">
-                  ${block.cost}
-                </div>
-              </div>
-            </div>
+            <ActivityBlockCard block={block} trip={trip} />
           </motion.div>
         ))}
       </div>
@@ -470,24 +663,40 @@ function DashboardView({ trip, onBack }: { trip: TripPlan, onBack: () => void })
         </button>
       </div>
     </motion.div>
+    </>
   );
 }
 
 export default function App() {
   const [view, setView] = useState<'welcome' | 'config' | 'loading' | 'dashboard'>('welcome');
-  const [currentTrip, setCurrentTrip] = useState<TripPlan | null>(null);
+  const [trips, setTrips] = useState<TripPlan[]>([]);
+  const [activeTripId, setActiveTripId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string, type: 'error' | 'info' } | null>(null);
+
+  const currentTrip = useMemo(() => trips.find(t => t.id === activeTripId) || null, [trips, activeTripId]);
 
   // Persistence
   useEffect(() => {
-    const saved = localStorage.getItem('VEER_CURRENT_TRIP');
+    const saved = localStorage.getItem('VEER_TRIPS');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setCurrentTrip(parsed);
-        setView('dashboard');
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Cache Validation for recent schema updates
+          const validTrips = parsed.filter(t => t.days?.[0]?.blocks?.[0] && typeof t.days[0].blocks[0].latitude !== 'undefined');
+          
+          if (validTrips.length === 0) {
+            localStorage.removeItem('VEER_TRIPS');
+            setView('config');
+            return;
+          }
+          
+          setTrips(validTrips);
+          setActiveTripId(validTrips[validTrips.length - 1].id);
+          setView('dashboard');
+        }
       } catch (e) {
-        console.error("Failed to load saved trip");
+        console.error("Failed to load saved trips");
         setToast({ message: "Cloud sync failed. Starting fresh.", type: 'info' });
       }
     }
@@ -497,8 +706,10 @@ export default function App() {
     setView('loading');
     try {
       const plan = await generateTripPlan(prefs);
-      setCurrentTrip(plan);
-      localStorage.setItem('VEER_CURRENT_TRIP', JSON.stringify(plan));
+      const newTrips = [...trips, plan];
+      setTrips(newTrips);
+      setActiveTripId(plan.id);
+      localStorage.setItem('VEER_TRIPS', JSON.stringify(newTrips));
       setView('dashboard');
       setToast({ message: "Itinerary synthesized successfully.", type: 'info' });
     } catch (e: any) {
@@ -518,15 +729,24 @@ export default function App() {
   };
 
   const handleNewTrip = () => {
-    localStorage.removeItem('VEER_CURRENT_TRIP');
-    setCurrentTrip(null);
     setView('config');
-    setToast({ message: "Engine reset. Awaiting new coordinates.", type: 'info' });
+  };
+
+  const handleDeleteTrip = (id: string) => {
+    const newTrips = trips.filter(t => t.id !== id);
+    setTrips(newTrips);
+    localStorage.setItem('VEER_TRIPS', JSON.stringify(newTrips));
+    if (newTrips.length === 0) {
+      setActiveTripId(null);
+      setView('config');
+    } else if (activeTripId === id) {
+      setActiveTripId(newTrips[newTrips.length - 1].id);
+    }
   };
 
   return (
     <div className="min-h-screen selection:bg-brand-accent selection:text-white">
-      <Header currentTrip={currentTrip} />
+      <Header trips={trips} activeTripId={activeTripId} onSelectTrip={(id) => { setActiveTripId(id); setView('dashboard'); }} onDeleteTrip={handleDeleteTrip} />
       
       <AnimatePresence>
         {toast && (

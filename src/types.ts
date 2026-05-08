@@ -11,13 +11,16 @@ export enum TravelPace {
 
 export interface TripPreferences {
   destination: string;
-  startDate: string;
-  endDate: string;
+  numDays: number;
   budget: number;
   currency: string;
+  travelStyle: string;
   interests: string[];
   pace: TravelPace;
   constraints: string[];
+  weatherPreference: string;
+  foodPreference: string;
+  transportPreference: string;
 }
 
 export interface ItineraryBlock {
@@ -31,6 +34,19 @@ export interface ItineraryBlock {
   cost: number;
   energyImpact: number; // -10 to +10
   isOptional?: boolean;
+  imageSearchTerm?: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface Accommodation {
+  name: string;
+  description: string;
+  location: string;
+  costPerNight: number;
+  rating: number;
+  latitude: number;
+  longitude: number;
 }
 
 export interface DailyPlan {
@@ -43,6 +59,7 @@ export interface TripPlan {
   id: string;
   preferences: TripPreferences;
   days: DailyPlan[];
+  accommodation: Accommodation;
   totalEstimatedCost: number;
   createdAt: string;
 }

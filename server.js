@@ -54,17 +54,33 @@ const TRIP_SCHEMA = {
                 cost: { type: Type.NUMBER },
                 energyImpact: { type: Type.NUMBER },
                 isOptional: { type: Type.BOOLEAN },
+                imageSearchTerm: { type: Type.STRING },
+                latitude: { type: Type.NUMBER },
+                longitude: { type: Type.NUMBER },
               },
-              required: ["title", "description", "location", "startTime", "endTime", "type", "cost", "energyImpact"],
+              required: ["title", "description", "location", "startTime", "endTime", "type", "cost", "energyImpact", "imageSearchTerm", "latitude", "longitude"],
             },
           },
         },
-        required: ["day", "date", "blocks"],
+        required: ["day", "blocks"],
       },
+    },
+    accommodation: {
+      type: Type.OBJECT,
+      properties: {
+        name: { type: Type.STRING },
+        description: { type: Type.STRING },
+        location: { type: Type.STRING },
+        costPerNight: { type: Type.NUMBER },
+        rating: { type: Type.NUMBER },
+        latitude: { type: Type.NUMBER },
+        longitude: { type: Type.NUMBER },
+      },
+      required: ["name", "description", "location", "costPerNight", "rating", "latitude", "longitude"],
     },
     totalEstimatedCost: { type: Type.NUMBER },
   },
-  required: ["days", "totalEstimatedCost"],
+  required: ["days", "accommodation", "totalEstimatedCost"],
 };
 
 // API Endpoints
@@ -76,20 +92,28 @@ app.post('/api/generate-trip', async (req, res) => {
 
   const prompt = `
     Generate a detailed travel itinerary for ${prefs.destination}.
-    Dates: ${prefs.startDate} to ${prefs.endDate}.
+    Number of Days: ${prefs.numDays}.
     Budget: ${prefs.budget} ${prefs.currency}.
-    Travel Style: ${prefs.interests?.join(", ") || 'General'}.
+    Travel Style: ${prefs.travelStyle}.
+    Interests: ${prefs.interests?.join(", ") || 'General'}.
     Pace: ${prefs.pace}.
+    Weather Preference: ${prefs.weatherPreference}.
+    Food Preference: ${prefs.foodPreference}.
+    Transport Preference: ${prefs.transportPreference}.
     Constraints: ${prefs.constraints?.join(", ") || 'None'}.
 
     For each activity block:
     - Include a descriptive title and detailed description.
+    - Provide a highly specific, 1-2 word Wikipedia search term for an image representing this place in "imageSearchTerm" (e.g. "Eiffel Tower", "Ramen").
     - Provide an estimated cost in ${prefs.currency}.
     - Assign an "energyImpact" score from -20 (very exhausting) to +10 (restorative).
     - Ensure a logical route order to minimize travel time.
     - Include meal times and transit blocks.
     - Respect the budget constraints.
     - Create flexible modular blocks.
+    - Generate accurate decimal GPS coordinates (latitude, longitude) for EVERY block to be plotted on a map.
+
+    Also, recommend a specific Hotel/Accommodation that perfectly fits the travel style and budget, and include its precise latitude and longitude.
   `;
 
   try {
@@ -113,6 +137,7 @@ app.post('/api/generate-trip', async (req, res) => {
       id: Math.random().toString(36).substr(2, 9),
       preferences: prefs,
       days: data.days,
+      accommodation: data.accommodation,
       totalEstimatedCost: data.totalEstimatedCost,
       createdAt: new Date().toISOString(),
     });

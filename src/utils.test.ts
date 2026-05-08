@@ -7,12 +7,14 @@ describe('Energy Optimization Logic', () => {
     {
       id: '1', startTime: '09:00', endTime: '11:00',
       title: 'Hike', description: '', location: '',
-      type: 'activity', cost: 0, energyImpact: -20
+      type: 'activity', cost: 0, energyImpact: -20,
+      latitude: 0, longitude: 0
     },
     {
       id: '2', startTime: '11:00', endTime: '12:00',
       title: 'Rest at Cafe', description: '', location: '',
-      type: 'meal', cost: 10, energyImpact: 10
+      type: 'meal', cost: 10, energyImpact: 10,
+      latitude: 0, longitude: 0
     }
   ];
 
